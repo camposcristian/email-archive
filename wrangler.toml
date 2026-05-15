@@ -1,0 +1,10 @@
+name = "email-archive"
+compatibility_date = "2024-12-01"
+pages_build_output_dir = "dist"
+
+[vars]
+EMAIL_PREFIX = "emails/gmail"
+
+[[r2_buckets]]
+binding = "COLD_STORAGE"
+bucket_name = "cold-storage"   # ← set to your R2 bucket name
