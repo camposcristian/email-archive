@@ -2,6 +2,8 @@
 
 > *Cold storage, warm UI.*
 
+![Floe — a searchable browser for your email archive](docs/floe-demo.gif)
+
 A searchable browser for email archives stored in any S3-compatible bucket. Pairs with [`gmail-cold-storage`](https://github.com/camposcristian/gmail-cold-storage) (the archiver).
 
 ### Why "Floe"?
