@@ -3,6 +3,18 @@ import type { EmailEntry } from "@/types/email"
 
 let db: Database | null = null
 let loading: Promise<Database> | null = null
+let loadedArchive: string | null = null
+
+export interface ArchiveList {
+  archives: string[]
+  default: string
+}
+
+export async function listArchives(): Promise<ArchiveList> {
+  const res = await fetch("/api/archives")
+  if (!res.ok) throw new Error(`Failed to list archives: ${res.status}`)
+  return res.json()
+}
 
 export interface QueryResult {
   emails: EmailEntry[]
@@ -33,19 +45,25 @@ const SORT_MAP: Record<string, string> = {
   size: "size_estimate",
 }
 
-export async function loadDb(): Promise<Database> {
-  if (db) return db
-  if (loading) return loading
+// `archive` selects which index to read (see /api/archives). Passing a
+// different archive than the one in memory swaps the loaded database; passing
+// the same one (or none) reuses it.
+export async function loadDb(archive?: string): Promise<Database> {
+  const want = archive ?? null
+  if (db && loadedArchive === want) return db
+  if (loading && loadedArchive === want) return loading
 
+  loadedArchive = want
   loading = (async () => {
     const SQL = await initSqlJs({
       locateFile: (file: string) => `/${file}`,
     })
 
-    const res = await fetch("/api/db")
+    const res = await fetch(want ? `/api/db?archive=${encodeURIComponent(want)}` : "/api/db")
     if (!res.ok) throw new Error(`Failed to load index: ${res.status}`)
 
     const buf = await res.arrayBuffer()
+    db?.close()
     db = new SQL.Database(new Uint8Array(buf))
     return db
   })()

@@ -2,8 +2,14 @@ import PostalMime from "postal-mime"
 
 interface Env {
   COLD_STORAGE: R2Bucket
-  EMAIL_PREFIX: string
+  EMAIL_PREFIX?: string
 }
+
+// Any key under emails/<archive-id>/… is readable, so the viewer can open mail
+// from whichever archive is selected (see /api/archives). The archive segment is
+// charset-restricted and the key may not contain ".." — together that keeps
+// reads inside the emails/ namespace regardless of what the client sends.
+const EMAIL_KEY = /^emails\/[a-zA-Z0-9_.-]+\/.+/
 
 export const onRequestGet: PagesFunction<Env> = async (context) => {
   const pathSegments = context.params.path
@@ -12,9 +18,8 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
   }
 
   const r2Key = pathSegments.join("/")
-  const prefix = context.env.EMAIL_PREFIX || "emails/gmail"
 
-  if (!r2Key.startsWith(`${prefix}/`)) {
+  if (!EMAIL_KEY.test(r2Key) || r2Key.includes("..")) {
     return new Response("Invalid email path", { status: 400 })
   }
 

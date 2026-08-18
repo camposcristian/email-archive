@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react"
-import { loadDb, queryEmails, getStats, type QueryResult, type DbStats } from "@/lib/email-db"
+import { loadDb, listArchives, queryEmails, getStats, type QueryResult, type DbStats } from "@/lib/email-db"
 import { SearchBar } from "@/components/search-bar"
+import { ArchiveSwitcher } from "@/components/archive-switcher"
 import { StatsBar } from "@/components/stats-bar"
 import { EmailList } from "@/components/email-list"
 import { EmailDetail } from "@/components/email-detail"
@@ -21,8 +22,20 @@ export default function App() {
   const [stats, setStats] = useState<DbStats>({ total: 0, totalSize: 0, categories: [] })
   const [selectedEmail, setSelectedEmail] = useState<EmailEntry | null>(null)
   const [category, setCategory] = useState("")
+  const [archives, setArchives] = useState<string[]>([])
+  const [archive, setArchive] = useState("")
 
   useEffect(() => {
+    // Discover the archives first so the switcher knows what exists, then load
+    // whichever one the backend resolves by default. A failure to list is not
+    // fatal — the viewer still works against the default archive.
+    listArchives()
+      .then((l) => {
+        setArchives(l.archives)
+        setArchive(l.default)
+      })
+      .catch(() => {})
+
     loadDb()
       .then(() => {
         setStats(getStats())
@@ -31,6 +44,25 @@ export default function App() {
       })
       .catch((e: Error) => { setError(e.message); setLoading(false) })
   }, [])
+
+  function handleArchiveSelect(next: string) {
+    if (next === archive || loading) return
+    setLoading(true)
+    setError(null)
+    setArchive(next)
+    // Reset every view filter — they describe the archive being left behind.
+    setSearch("")
+    setPage(1)
+    setCategory("")
+    setSelectedEmail(null)
+    loadDb(next)
+      .then(() => {
+        setStats(getStats())
+        setResult(queryEmails({ page: 1, perPage: PER_PAGE, sort, order }))
+        setLoading(false)
+      })
+      .catch((e: Error) => { setError(e.message); setLoading(false) })
+  }
 
   const runQuery = useCallback((s: string, p: number, so: string, o: string, cat: string) => {
     setResult(queryEmails({
@@ -88,6 +120,14 @@ export default function App() {
           <p className="text-sm text-muted-foreground">
             {loading ? "Loading archive…" : "the mail archive"}
           </p>
+        </div>
+        <div className="ml-auto">
+          <ArchiveSwitcher
+            archives={archives}
+            active={archive}
+            onSelect={handleArchiveSelect}
+            disabled={loading}
+          />
         </div>
       </header>
 
