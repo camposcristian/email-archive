@@ -14,7 +14,7 @@ import http from "node:http"
 import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3"
+import { S3Client, GetObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3"
 import PostalMime from "postal-mime"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -92,9 +92,41 @@ function serveStatic(req, res, urlPath) {
   fs.createReadStream(path.join(DIST_DIR, "index.html")).pipe(res)
 }
 
+// ─── API: GET /api/archives → available archives ─────
+const ARCHIVE_ID = /^[a-zA-Z0-9_.-]+$/
+
+async function handleArchives(res) {
+  // Mirrors functions/api/archives.ts: an archive is any emails/<id>/index.db.
+  const found = []
+  try {
+    const out = await s3.send(
+      new ListObjectsV2Command({ Bucket: process.env.S3_BUCKET, Prefix: "emails/", Delimiter: "/" })
+    )
+    for (const p of out.CommonPrefixes ?? []) {
+      const id = (p.Prefix ?? "").slice("emails/".length).replace(/\/$/, "")
+      if (!id) continue
+      if (await s3Get(`emails/${id}/index.db`)) found.push(id)
+    }
+  } catch {
+    // listing unavailable — fall back to just the configured prefix
+  }
+  const def = EMAIL_PREFIX.replace(/^emails\//, "")
+  if (!found.includes(def)) found.push(def)
+  found.sort()
+  res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "public, max-age=60" })
+  res.end(JSON.stringify({ archives: found, default: def }))
+}
+
 // ─── API: GET /api/db → index.db ─────────────────────
-async function handleDb(res) {
-  const buf = await s3Get(`${EMAIL_PREFIX}/index.db`)
+async function handleDb(res, url) {
+  const archive = url?.searchParams.get("archive")
+  if (archive && !ARCHIVE_ID.test(archive)) {
+    res.writeHead(400, { "Content-Type": "text/plain" })
+    res.end("Invalid archive")
+    return
+  }
+  const prefix = archive ? `emails/${archive}` : EMAIL_PREFIX
+  const buf = await s3Get(`${prefix}/index.db`)
   if (!buf) {
     res.writeHead(404, { "Content-Type": "text/plain" })
     res.end("Index DB not found")
@@ -219,7 +251,8 @@ const server = http.createServer(async (req, res) => {
   const p = url.pathname
 
   try {
-    if (p === "/api/db") { await handleDb(res); return }
+    if (p === "/api/db") { await handleDb(res, url); return }
+    if (p === "/api/archives") { await handleArchives(res); return }
     if (p === "/api" || p === "/api/") { await handleIndex(res); return }
     if (p.startsWith("/api/email/")) { await handleEmail(req, res, url); return }
     serveStatic(req, res, p)
